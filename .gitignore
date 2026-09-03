@@ -2,3 +2,4 @@
 GATE.json
 __pycache__/
 dist/
+GATE-*.log

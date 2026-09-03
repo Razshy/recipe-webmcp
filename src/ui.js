@@ -352,6 +352,8 @@ function renderInvocations() {
 /* ------------------------------------------------------------ scheduler */
 
 let pending = false;
+const settled = [];
+
 export function renderAll() {
   renderCanvas();
   renderPalette();
@@ -363,5 +365,24 @@ export function renderAll() {
 export function scheduleRender() {
   if (pending) return;
   pending = true;
-  requestAnimationFrame(() => { pending = false; renderAll(); });
+  requestAnimationFrame(() => {
+    pending = false;
+    renderAll();
+    while (settled.length) settled.pop()();
+  });
+}
+
+/** Resolves once the canvas actually shows the state a tool just changed.
+ *  Tools await this before returning, so a tool never reports a count or a
+ *  selection the human cannot yet see. Falls back to a timer in a hidden tab,
+ *  where requestAnimationFrame does not run. */
+export function renderSettled() {
+  if (!pending) return Promise.resolve();
+  return new Promise((resolve) => {
+    settled.push(resolve);
+    setTimeout(() => {
+      const i = settled.indexOf(resolve);
+      if (i !== -1) { settled.splice(i, 1); resolve(); }
+    }, 1000);
+  });
 }

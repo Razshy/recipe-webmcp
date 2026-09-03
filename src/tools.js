@@ -13,7 +13,7 @@ import {
   fixtureByName, putFixture, defaultFixtureFor, logInvocation,
 } from './state.js';
 import { SCORER_ORIGIN, VIA, callOracle, scorePipeline, fail, trapById } from './oracle.js';
-import { logLine, logArtifact } from './ui.js';
+import { logLine, logArtifact, renderSettled } from './ui.js';
 
 const TOOL_ID_RE = /^[a-z0-9-]{1,40}$/;
 const NAME_RE = /^[^\x00-\x1f\x7f]{1,60}$/u;
@@ -180,6 +180,7 @@ function guarded(name, fn) {
       result = fail('wrong_state', 'unexpected failure in ' + name + ': ' + String(err && err.message ? err.message : err), 'retry with a well-formed input; the invocation log has the details');
     }
     if (result === undefined || result === null) result = fail('wrong_state', name + ' produced no result', 'retry');
+    await renderSettled(); // never claim success for something the page has not shown yet
     const ms = Math.round((performance.now() - t0) * 10) / 10;
     logInvocation({ n: store.log.length + 1, name, ok: result.ok !== false, ms, input: JSON.stringify(safeInput).slice(0, 600), output: JSON.stringify(result), at: Date.now() });
     return result;
