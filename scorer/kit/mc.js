@@ -24,7 +24,8 @@
   const NAME_RE = /^[A-Za-z0-9._-]{1,128}$/;
   const WIRE = 'mcpb/2';
   const PING_MS = 300;
-  const COLLECT_MS = 700;
+  const PROBE_MS = 700;    // unknown frame: is anything in there running the kit at all?
+  const FRAME_MS = 20000;  // frame that has answered before: wait for it, the way native getTools() does
   const EXEC_MS = 120000;
   const nativeMC =
     document.modelContext && typeof document.modelContext.registerTool === 'function'
@@ -70,7 +71,8 @@
   };
 
   // ------------------------------------------------------------ frame messaging
-  const pending = new Map(); // id -> {resolve, timer}
+  const pending = new Map();      // id -> {resolve, timer}
+  const knownKit = new WeakSet(); // windows that have spoken the kit protocol at least once
 
   const post = (win, msg, targetOrigin) => {
     try { win.postMessage({ ...msg, wire: WIRE }, targetOrigin || '*'); return true; } catch { return false; }
@@ -79,10 +81,20 @@
   const rpc = (win, msg, { targetOrigin, timeout } = {}) =>
     new Promise((resolve) => {
       const id = randomId();
-      const timer = setTimeout(() => { pending.delete(id); resolve(null); }, timeout || COLLECT_MS);
-      pending.set(id, { resolve, timer });
+      const timer = setTimeout(() => { pending.delete(id); resolve(null); }, timeout || PROBE_MS);
+      pending.set(id, { resolve: (reply) => { if (reply) knownKit.add(win); resolve(reply); }, timer });
       if (!post(win, { ...msg, id }, targetOrigin)) { clearTimeout(timer); pending.delete(id); resolve(null); }
     });
+
+  /** Ask a frame, waiting like native does once we know the kit is running in it.
+   *  A frame that has never answered gets one short probe; a known one gets the full wait, and a
+   *  miss is reported rather than silently dropping its tools. */
+  const frameRpc = async (win, msg) => {
+    const known = knownKit.has(win);
+    const reply = await rpc(win, msg, { timeout: known ? FRAME_MS : PROBE_MS });
+    if (!reply && known) console.warn('WebMCP kit: a frame did not answer within ' + FRAME_MS + ' ms; its tools are missing from this result');
+    return reply;
+  };
 
   const reply = (ev, id, body) => post(ev.source, { kind: 'reply', id, ...body }, ev.origin === 'null' ? '*' : ev.origin);
 
@@ -93,8 +105,10 @@
       rootPromise = (async () => {
         let win = window;
         while (win.parent && win.parent !== win) {
-          const pong = await rpc(win.parent, { kind: 'ping' }, { timeout: PING_MS });
-          if (!pong) { if (win === window) rootPromise = null; break; } // parent not (yet) running the kit: retry next call
+          // a busy parent is not an absent one: probe again for longer before concluding we are the root
+          const pong = (await rpc(win.parent, { kind: 'ping' }, { timeout: PING_MS }))
+            || (await rpc(win.parent, { kind: 'ping' }, { timeout: 2000 }));
+          if (!pong) { if (win === window) rootPromise = null; break; } // parent not running the kit: retry next call
           win = win.parent;
         }
         return win;
@@ -171,7 +185,7 @@
     }
     const children = [];
     for (let i = 0; i < window.frames.length; i++) {
-      children.push(rpc(window.frames[i], { kind: 'collect', forwarded: true, asker: askerOrigin, fromOrigins, path: [...path, i] }));
+      children.push(frameRpc(window.frames[i], { kind: 'collect', forwarded: true, asker: askerOrigin, fromOrigins, path: [...path, i] }));
     }
     for (const res of await Promise.all(children)) if (res && res.tools) out.push(...res.tools);
     return out;
@@ -235,7 +249,7 @@
       const root = await findRoot();
       const tools = root === window
         ? await collect(selfOrigin(), fromOrigins, [])
-        : ((await rpc(root, { kind: 'collect', fromOrigins, path: [] })) || { tools: [] }).tools;
+        : ((await frameRpc(root, { kind: 'collect', fromOrigins, path: [] })) || { tools: [] }).tools;
       const out = tools.map(({ path, ...tool }) => ({ ...tool, window: walkPath(root, path) }));
       out.sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
       return out;
@@ -269,6 +283,7 @@
   window.addEventListener('message', (ev) => {
     const d = ev.data;
     if (!d || d.wire !== WIRE) return;
+    if (ev.source) knownKit.add(ev.source); // this window speaks the kit protocol
     if (d.kind === 'reply') {
       const p = pending.get(d.id);
       if (!p) return;
