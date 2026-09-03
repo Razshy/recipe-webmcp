@@ -4,7 +4,8 @@
 <script src="/kit/mc.js"></script>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Recipe — pipelines that know where they'll break.</title>
+<link rel="icon" href="data:,">
+<title>Recipe — pipelines that know where they'll break</title>
 <link rel="stylesheet" href="./src/styles.css">
 </head>
 <body>
@@ -14,19 +15,19 @@
       <p class="kicker">document-pipeline studio · mise en place</p>
       <h1>Recipe — pipelines that know where they&rsquo;ll break.</h1>
       <p class="audit-note">
-        We watched an AI agent&rsquo;s document toolbox for 48 hours. Pandoc emitted a package the image did not
-        have; conversions exited&nbsp;0 while writing nothing; one tool&rsquo;s <code>-quality</code> flag was ignored for
-        every value we passed it; the opener command silently launched a GUI that never closed. This app turns
-        those traps into a scoring oracle: build a pipeline, and the page tells you where it will break
-        <em>before</em> you run it.
+        We watched an AI agent&rsquo;s document toolbox for 48 hours. Conversions exited&nbsp;0 while writing nothing;
+        one tool&rsquo;s <code>-quality</code> flag was ignored for every value we passed it; a converter renamed a file
+        instead of converting it; an extractor read strings no pixel ever showed. This studio turns those traps into
+        a scoring oracle that lives on <em>another origin</em>: build a pipeline, run it for real, and the page can only
+        report what the oracle could verify.
       </p>
     </div>
-    <div class="mast-right" id="status-pills" data-test="status-pills">
-      <span class="pill" id="pill-engine">webmcp: checking</span>
+    <div class="mast-right" id="status-pills" data-test="status-pills" role="status" aria-live="polite">
+      <span class="pill" id="pill-engine" title="window.MC.native — native WebMCP needs Chrome 149+ with chrome://flags/#enable-webmcp-testing">WebMCP: checking</span>
       <span class="pill" id="pill-origin">origins: checking</span>
-      <span class="pill" id="pill-tools">tools: –</span>
       <span class="pill" id="pill-oracle">oracle: offline</span>
       <span class="pill warn" id="pill-real">REAL: – · SIMULATED: –</span>
+      <span class="pill" id="pill-toolchange">toolchange ×0</span>
     </div>
   </div>
 </header>
@@ -36,42 +37,34 @@
   <aside class="rail" aria-label="Mise en place">
     <section class="card">
       <h2>Mise en place</h2>
-      <label class="field">
-        <span>Input</span>
-        <select id="input-type" data-test="input-type"></select>
-      </label>
-      <label class="field">
-        <span>Goal</span>
-        <select id="goal-type" data-test="goal-type"></select>
-      </label>
-      <label class="field">
-        <span>Fixture</span>
-        <select id="fixture-id" data-test="fixture-id"></select>
-      </label>
+      <label class="field" for="input-type"><span>Input</span></label>
+      <select id="input-type" data-test="input-type"></select>
+      <label class="field" for="goal-type"><span>Goal</span></label>
+      <select id="goal-type" data-test="goal-type"></select>
+      <label class="field" for="fixture-id"><span>Fixture (for Run)</span></label>
+      <select id="fixture-id" data-test="fixture-id"></select>
       <div class="btn-row">
-        <button class="btn primary" id="btn-build" data-test="btn-build">Start a recipe</button>
-        <button class="btn" id="btn-plan" data-test="btn-plan">Plan the chain</button>
+        <button class="btn primary" id="btn-build" data-test="btn-build" type="button">Start a recipe</button>
       </div>
-      <p class="hint" id="plan-hint">Planning inserts the shortest chain the catalogue can actually execute.</p>
+      <p class="hint" id="plan-hint" role="status">Starting a recipe plans the shortest chain the catalogue can execute, builds it and asks the oracle.</p>
     </section>
 
     <section class="card">
       <h2>Ask the agent</h2>
-      <label class="field">
-        <span>Goal in words</span>
-        <input id="agent-goal" data-test="agent-goal" type="text" value="summarize the scanned pdf" spellcheck="false">
-      </label>
+      <label class="field" for="agent-goal"><span>Goal in words</span></label>
+      <input id="agent-goal" data-test="agent-goal" type="text" value="summarize the scanned pdf" spellcheck="false">
       <div class="btn-row">
-        <button class="btn primary" id="btn-ask" data-test="btn-ask">Ask the agent</button>
-        <button class="btn danger" id="btn-bad" data-test="btn-bad">Propose the bad one</button>
+        <button class="btn primary" id="btn-ask" data-test="btn-ask" type="button">Ask the agent</button>
+        <button class="btn danger" id="btn-bad" data-test="btn-bad" type="button">Propose the bad one</button>
       </div>
-      <button class="btn wide" id="btn-good" data-test="btn-good">Load the known-good recipe (docx → md)</button>
-      <p class="hint">The proposer is a script, not a model: it scores its own idea, then the external scorer
-        disagrees. The gap between the two numbers is the product.</p>
+      <button class="btn wide" id="btn-good" data-test="btn-good" type="button">Load the known-good recipe (docx → md)</button>
+      <p class="hint">The proposer is a script, not a model <span class="badge sim">SIMULATED</span>: it rates its own idea,
+        then the external oracle disagrees. The gap between the two numbers is the product.</p>
     </section>
 
     <section class="card" id="palette-card">
       <h2>Palette <span class="count" id="palette-count"></span></h2>
+      <label class="sr-only" for="palette-filter">Filter transforms</label>
       <input class="filter" id="palette-filter" type="search" placeholder="filter transforms…" data-test="palette-filter">
       <div id="palette" class="palette" data-test="palette"></div>
       <p class="hint">Click a transform to append it to the selected recipe. Every card carries its own
@@ -80,47 +73,59 @@
   </aside>
 
   <!-- ---------------- center: canvas of pipeline index cards ---------------- -->
-  <section class="canvas-wrap">
+  <section class="canvas-wrap" aria-label="Recipes">
     <div class="canvas-head">
       <h2>The canvas</h2>
-      <span class="muted" id="canvas-note">no recipes yet</span>
+      <span class="muted" id="canvas-note" role="status">no recipes yet</span>
     </div>
-    <div id="canvas" class="canvas" data-test="canvas"></div>
+    <div id="canvas" class="canvas" data-test="canvas" aria-live="polite"></div>
   </section>
 
-  <!-- ---------------- right rail: agent + oracle ---------------- -->
-  <aside class="rail" aria-label="Agent">
+  <!-- ---------------- right rail: agent surface + oracle ---------------- -->
+  <aside class="rail" aria-label="Agent surface">
     <section class="card">
-      <h2>Simulate agent</h2>
-      <p class="hint">Everything below runs through <code>window.__agent</code> — the same handle the tests use,
-        not a private function.</p>
-      <div class="btn-row wrap" id="agent-quick" data-test="agent-quick"></div>
+      <h2>Agent surface</h2>
+      <p class="hint" id="surface-note">Tools exactly as an agent sees them, from <code>getTools({fromOrigins})</code>.</p>
       <div class="sub">
         <h3>Visible tools <span class="count" id="tool-count"></span></h3>
         <ul id="agent-tools" class="tool-list" data-test="agent-tools"></ul>
       </div>
       <div class="sub">
-        <h3>Call a tool</h3>
-        <label class="field">
-          <span>Tool</span>
-          <select id="call-tool" data-test="call-tool"></select>
+        <h3>Run a tool</h3>
+        <label class="field" for="call-tool"><span>Tool</span></label>
+        <select id="call-tool" data-test="call-tool"></select>
+        <label class="field" for="call-input"><span>Input (JSON)</span></label>
+        <textarea id="call-input" rows="3" spellcheck="false" data-test="call-input">{}</textarea>
+        <button class="btn primary wide" id="btn-call" data-test="btn-call" type="button">Call it through window.__agent</button>
+        <pre id="call-out" class="call-out" data-test="call-out" role="status" aria-live="polite">—</pre>
+      </div>
+      <div class="sub">
+        <h3>Invocation log <span class="count" id="invocation-count"></span></h3>
+        <div class="table-wrap">
+          <table class="invocations" data-test="invocations">
+            <thead><tr><th scope="col">#</th><th scope="col">tool</th><th scope="col">status</th><th scope="col">ms</th><th scope="col">input</th><th scope="col">output</th></tr></thead>
+            <tbody id="invocations" role="log" aria-live="polite"></tbody>
+          </table>
+        </div>
+        <p class="hint">Every call, whoever made it. Click a row to see the full input and output above.</p>
+      </div>
+      <div class="sub">
+        <h3>Human in the loop</h3>
+        <label class="check" for="chk-delete">
+          <input type="checkbox" id="chk-delete" data-test="chk-delete"> let agents delete recipes
         </label>
-        <label class="field">
-          <span>Input (JSON)</span>
-          <textarea id="call-input" rows="3" spellcheck="false" data-test="call-input">{}</textarea>
-        </label>
-        <button class="btn primary wide" id="btn-call" data-test="btn-call">Call it</button>
-        <pre id="call-out" class="call-out" data-test="call-out">—</pre>
+        <p class="hint" id="delete-note" role="status">pipeline_delete is not registered — ticking the box registers it with an AbortSignal; unticking aborts it (watch the toolchange counter).</p>
       </div>
     </section>
 
     <section class="card oracle-card">
       <h2>The oracle lives elsewhere</h2>
-      <p class="hint">The trap engine is registered on a <strong>different origin</strong>. The studio can only reach
-        it with <code>getTools({fromOrigins})</code>; its internal cache call is never exposed here.</p>
-      <button class="btn wide" id="btn-oracle-inspect" data-test="btn-oracle-inspect">Ask the oracle for its catalogue</button>
-      <pre id="oracle-out" class="call-out" data-test="oracle-out">—</pre>
-      <iframe id="scorer-frame" name="scorer" title="Recipe scorer origin" data-test="scorer-frame"></iframe>
+      <p class="hint">The trap engine is registered on the <strong>scorer origin</strong>. In multi-origin mode the studio can only reach
+        it with <code>getTools({fromOrigins})</code> and its internal <code>warm_cache</code> call stays invisible; in single-folder
+        mode the oracle is a same-origin iframe and the spec makes everything in it visible (the origin pill says which).</p>
+      <button class="btn wide" id="btn-oracle-inspect" data-test="btn-oracle-inspect" type="button">Ask the oracle for its catalogue (via bridge)</button>
+      <pre id="oracle-out" class="call-out" data-test="oracle-out" role="status" aria-live="polite">—</pre>
+      <iframe id="scorer-frame" name="scorer" title="Recipe scorer origin" allow="tools" data-test="scorer-frame" width="300" height="360"></iframe>
     </section>
   </aside>
 </main>
@@ -129,15 +134,15 @@
 <section class="console-wrap" aria-label="Run console">
   <div class="canvas-head">
     <h2>Run console</h2>
-    <span class="muted" id="run-note">idle</span>
-    <button class="btn tiny" id="btn-clear-history" data-test="btn-clear-history">clear history</button>
+    <span class="muted" id="run-note" role="status">idle</span>
+    <button class="btn tiny" id="btn-clear-history" data-test="btn-clear-history" type="button">clear history</button>
   </div>
-  <div id="console" class="console" data-test="console"><div class="lines" id="console-lines"></div></div>
+  <div id="console" class="console" data-test="console"><div class="lines" id="console-lines" role="log" aria-live="polite"></div></div>
 </section>
 
 <footer class="colophon">
-  <span>Vanilla ES modules, zero npm dependencies. REAL steps execute in this tab; SIMULATED steps say so.
-    Scoring engine: <span id="engine-stamp">—</span></span>
+  <span>Vanilla ES modules, zero npm dependencies. REAL steps execute in this tab; SIMULATED steps say so; every score
+    comes from the oracle origin, which labels each hit <em>plan</em>, <em>measured</em> or <em>claimed</em>.</span>
 </footer>
 
 <script type="module" src="./src/main.js"></script>

@@ -3,8 +3,6 @@
  * right now, by the code in this folder"; SIMULATED means "the shape of the answer is
  * deterministic, the mechanism is the one that bit us upstream, and the UI says so". */
 
-export const TYPES = ['pdf', 'png', 'txt', 'md', 'html', 'csv', 'xlsx', 'docx', 'rgba', 'zip', 'files', 'csv-of-tables'];
-
 export const CATALOG = [
   /* ------------------------------ REAL ------------------------------ */
   {
@@ -156,18 +154,20 @@ export const GOALS = [
   { id: 'html', label: 'html', type: 'html' },
   { id: 'xlsx', label: 'spreadsheet', type: 'xlsx' },
 ];
+/* Input choices for the human: each names the fixture it should run on, so the mislabeled scan
+   really does select the PNG-bytes-named-.pdf fixture and not the honest PDF. */
 export const INPUTS = [
-  { id: 'pdf', label: '.pdf', type: 'pdf' },
-  { id: 'docx', label: '.docx', type: 'docx' },
-  { id: 'xlsx', label: '.xlsx', type: 'xlsx' },
-  { id: 'png', label: '.png', type: 'png' },
-  { id: 'md', label: '.md', type: 'md' },
-  { id: 'csv', label: '.csv', type: 'csv' },
-  { id: 'txt', label: '.txt', type: 'txt' },
-  { id: 'doc', label: '.doc (legacy)', type: 'doc' },
-  { id: 'scan-mislabeled', label: 'scan named .pdf (bytes are PNG)', type: 'pdf' },
+  { id: 'pdf', label: '.pdf', type: 'pdf', fixture: 'pdf-doc' },
+  { id: 'docx', label: '.docx', type: 'docx', fixture: 'docx-memo' },
+  { id: 'xlsx', label: '.xlsx', type: 'xlsx', fixture: 'xlsx-sales' },
+  { id: 'png', label: '.png', type: 'png', fixture: 'png-scan' },
+  { id: 'md', label: '.md', type: 'md', fixture: 'md-notes' },
+  { id: 'html', label: '.html', type: 'html', fixture: 'html-notes' },
+  { id: 'csv', label: '.csv', type: 'csv', fixture: 'csv-sales' },
+  { id: 'txt', label: '.txt', type: 'txt', fixture: 'txt-plain' },
+  { id: 'zip', label: '.zip', type: 'zip', fixture: 'zip-packed' },
+  { id: 'files', label: 'loose files', type: 'files', fixture: 'zip-parts' },
+  { id: 'doc', label: '.doc (legacy)', type: 'doc', fixture: 'doc-legacy' },
+  { id: 'scan', label: 'scan (unknown to the catalogue)', type: 'scan', fixture: 'png-scan' },
+  { id: 'scan-mislabeled', label: 'scan named .pdf (bytes are PNG)', type: 'pdf', fixture: 'png-bytes-named-pdf' },
 ];
-
-export function transformsFor(inType, outType) {
-  return CATALOG.filter((t) => t.in === inType || t.out === outType);
-}

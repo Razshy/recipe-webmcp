@@ -84,11 +84,13 @@ const SIGNATURES = [
   { type: 'pdf', bytes: [0x25, 0x50, 0x44, 0x46], name: 'PDF (%PDF)' },
   { type: 'jpeg', bytes: [0xff, 0xd8, 0xff], name: 'JPEG' },
   { type: 'gif', bytes: [0x47, 0x49, 0x46, 0x38], name: 'GIF' },
+  { type: 'avif', bytes: [0x66, 0x74, 0x79, 0x70, 0x61, 0x76, 0x69, 0x66], name: 'AVIF (ftypavif)', offset: 4 },
 ];
 
 export function sniffMagic(bytes) {
   for (const sig of SIGNATURES) {
-    if (sig.bytes.every((b, i) => bytes[i] === b)) {
+    const off = sig.offset || 0;
+    if (sig.bytes.every((b, i) => bytes[off + i] === b)) {
       return { type: sig.type, magic: sig.name, confident: true };
     }
   }
@@ -113,16 +115,3 @@ export function pngDims(bytes) {
   return { width: dv.getUint32(16), height: dv.getUint32(20) };
 }
 
-export function jpegDims(bytes) {
-  let i = 2;
-  while (i + 9 < bytes.length) {
-    if (bytes[i] !== 0xff) { i++; continue; }
-    const marker = bytes[i + 1];
-    const len = (bytes[i + 2] << 8) | bytes[i + 3];
-    if (marker >= 0xc0 && marker <= 0xcf && ![0xc4, 0xc8, 0xcc].includes(marker)) {
-      return { height: (bytes[i + 5] << 8) | bytes[i + 6], width: (bytes[i + 7] << 8) | bytes[i + 8] };
-    }
-    i += 2 + len;
-  }
-  return null;
-}

@@ -3,44 +3,52 @@
 <head>
 <script src="/kit/mc.js"></script>
 <meta charset="utf-8">
-<title>Recipe — Scorer (external oracle)</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<link rel="icon" href="data:,">
+<title>Recipe Scorer — external oracle</title>
 <style>
-  :root { color-scheme: light; }
-  body {
-    margin: 0; font: 13px/1.5 ui-monospace, "SFMono-Regular", Menlo, monospace;
-    background: #f4efe6; color: #241f1a;
+  :root {
+    color-scheme: light;
+    --paper: #f4efe6; --paper-2: #fffdf8; --paper-3: #f8f3e9; --ink: #241f1a; --muted: #6c6157;
+    --line: #d8cdbd; --line-2: #ece3d5; --rust: #a4262c; --amber: #9a6700; --olive: #57606a;
+    --mono: ui-monospace, 'SFMono-Regular', Menlo, monospace;
   }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 13px/1.5 var(--mono); background: var(--paper); color: var(--ink); }
   .sheet { max-width: 720px; margin: 0 auto; padding: 14px 16px 24px; }
   h1 { font: 600 15px/1.3 inherit; margin: 0 0 2px; letter-spacing: .01em; }
-  .sub { color: #6c6157; margin: 0 0 12px; }
+  .sub { color: var(--muted); margin: 0 0 12px; }
   .bar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
-  .pill { border: 1px solid #d8cdbd; background: #fffdf8; border-radius: 999px; padding: 2px 9px; font-size: 11px; }
-  .ok { border-color: #9cbb8f; background: #f1f7ec; }
+  .pill { border: 1px solid var(--line); background: var(--paper-2); border-radius: 999px; padding: 2px 9px; font-size: 11px; }
   .live { border-color: #e0c98a; background: #fdf6e3; }
-  table { width: 100%; border-collapse: collapse; background: #fffdf8; border: 1px solid #e2d8c8; }
-  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid #ece3d5; vertical-align: top; }
-  th { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: #6c6157; background: #f8f3e9; }
-  .sev-high { color: #a4262c; font-weight: 700; }
-  .sev-medium { color: #9a6700; font-weight: 700; }
-  .sev-low { color: #57606a; font-weight: 700; }
+  table { width: 100%; border-collapse: collapse; background: var(--paper-2); border: 1px solid var(--line-2); }
+  th, td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+  th { font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); background: var(--paper-3); }
+  .sev-high { color: var(--rust); font-weight: 700; }
+  .sev-medium { color: var(--amber); font-weight: 700; }
+  .sev-low { color: var(--olive); font-weight: 700; }
   code { font: inherit; }
-  .foot { color: #6c6157; margin-top: 10px; }
+  .foot { color: var(--muted); margin-top: 10px; }
+  :focus-visible { outline: 2px solid var(--rust); outline-offset: 2px; }
 </style>
 </head>
 <body>
 <div class="sheet">
   <h1>Recipe Scorer — external trap oracle</h1>
-  <p class="sub">The trap engine does not live in the studio. It lives on this other origin, so the page grading the
-  agent&rsquo;s pipeline is not the page that built it. Same-origin callers must be listed in <code>exposedTo</code>
-  and read with <code>getTools({fromOrigins})</code>.</p>
-  <div class="bar">
+  <p class="sub">The trap engine does not live in the studio. It lives on this origin, so the page grading the
+  agent&rsquo;s pipeline is not the page that built it. Studio callers are listed in <code>exposedTo</code> and read
+  these tools with <code>getTools({fromOrigins})</code>. Every hit says whether the oracle <em>measured</em> the
+  evidence itself or only repeated a <em>claim</em>.</p>
+  <div class="bar" role="status" aria-live="polite">
     <span class="pill" id="mode">engine: loading</span>
-    <span class="pill" id="traps">traps: –</span>
+    <span class="pill" id="binding">webmcp: —</span>
+    <span class="pill" id="traps">weights: –</span>
     <span class="pill" id="ready">tools: –</span>
     <span class="pill live" id="calls">score_pipeline calls: 0</span>
+    <span class="pill live" id="last">last verdict: —</span>
   </div>
   <table>
-    <thead><tr><th style="width:52px">id</th><th style="width:74px">severity</th><th style="width:46px">weight</th><th>pattern</th></tr></thead>
+    <thead><tr><th scope="col">id</th><th scope="col">severity</th><th scope="col">weight</th><th scope="col">pattern</th></tr></thead>
     <tbody id="rows"></tbody>
   </table>
   <p class="foot" id="engine"></p>

@@ -1,5 +1,5 @@
-/* src/entities.js — entity decode/encode, used by the docx reader, the html->md
- * converter and the PDF text extractor (which uses octal escapes in string literals). */
+/* src/entities.js — HTML/XML entity decoding, used by the docx/xlsx readers, the html->md
+ * converter and the html->text step. */
 
 const NAMED = {
   amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: '\u00a0',
@@ -23,12 +23,4 @@ export function decodeEntities(str) {
     const key = body.toLowerCase();
     return Object.prototype.hasOwnProperty.call(NAMED, key) ? NAMED[key] : m;
   });
-}
-
-export function encodeEntities(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
 }

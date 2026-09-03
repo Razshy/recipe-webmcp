@@ -1,19 +1,18 @@
-/* src/engine.js — pipeline validation + REAL execution.
+/* src/engine.js — pipeline validation + REAL execution. No scoring lives here: the studio has
+ * no trap engine at all; it sends what it observed (and the artifact bytes) to the oracle origin.
  *
- * A document moving through a pipeline is `{ type, bytes?, text?, rgba?, files? }`.
- * Every step reports bytesIn/bytesOut and may attach `notes` — those notes are what the
- * scorer turns into runtime-class trap hits (empty output, magic mismatch, ignored quality,
- * silent empty result). A step that cannot run honestly throws; the console shows the step
- * as failed rather than inventing an answer. */
+ * A document moving through a pipeline is `{ type, bytes?, text?, rgba?, files?, declaredType? }`.
+ * Every step reports bytesIn/bytesOut and may attach `notes` — the runtime observations the
+ * oracle labels as claimed (it re-measures what it can from the artifact bytes). A step that
+ * cannot run honestly throws, and the notes it gathered before failing travel with the error. */
 
 import { BY_ID } from './catalog.js';
-import { bytesFromB64, b64FromBytes, pngDims, sniffMagic, textEncode } from './bytes.js';
+import { bytesFromB64, b64FromBytes, pngDims, sniffMagic, textDecode, textEncode } from './bytes.js';
 import { extractPdfText, renderPdf, writePdf } from './pdf.js';
 import { mdToHtml, htmlToMd } from './markdown.js';
 import { decodeEntities } from './entities.js';
 import { docxToText, textToDocx, xlsxToCsv, csvToXlsx, csvToMarkdown } from './office.js';
 import { readZip, writeZip } from './zip.js';
-import { scoreTraps, TRAPS, TRAP_ENGINE } from './traps.js';
 
 /* ---------------- validation ---------------- */
 
@@ -107,32 +106,50 @@ function hash32(bytes) {
 
 const OCR_WORDS = ['the', 'invoice', 'total', 'amount', 'due', 'page', 'table', 'quantity', 'unit', 'price', 'customer', 'order', 'net', 'gross', 'date', 'terms', 'subtotal', 'tax'];
 
-export async function executeStep(toolId, doc, params = {}, ctx = {}) {
+/** Fails loudly when the bytes are not what the step was told they are — and keeps the note. */
+function requireMagic(doc, wantType, notes, label) {
+  const magic = sniffMagic(doc.bytes || new Uint8Array(0));
+  if (magic.type === wantType) return magic;
+  notes.magicMismatch = 'declared ' + (doc.declaredType || doc.type || wantType) + ', magic bytes say "' + magic.magic + '"';
+  throw new Error(label + ' refused: not a ' + wantType.toUpperCase() + ' (magic says ' + magic.magic + ')');
+}
+
+async function executeStep(toolId, doc, params = {}, ctx = {}) {
   const def = BY_ID[toolId];
   if (!def) throw new Error('unknown transform: ' + toolId);
   const notes = {};
   const meta = {};
   const bytesIn = doc.bytes ? doc.bytes.length : (doc.text ? textEncode(doc.text).length : 0);
   const out = { type: def.out, notes, meta, bytesIn };
+  try {
+    await runStep(toolId, def, doc, params, ctx, out, notes, meta, bytesIn);
+  } catch (err) {
+    err.notes = notes; // partial observations survive the failure
+    throw err;
+  }
+  return out;
+}
 
+async function runStep(toolId, def, doc, params, ctx, out, notes, meta, bytesIn) {
   switch (toolId) {
     case 'pdf-text': {
+      requireMagic(doc, 'pdf', notes, 'pdf → text');
       const r = await extractPdfText(doc.bytes);
       out.text = r.text;
       meta.pages = r.pageCount;
       meta.strings = r.stringCount;
-      meta.rawOrder = r.rawText;
-      meta.visualOrder = r.text;
+      meta.streamsFailed = r.streamsFailed;
       meta.orderMayDiffer = r.orderMayDiffer;
-      meta.paint = ctx.paint || null;
+      if (r.streamsFailed) notes.decodeFailed = r.streamsFailed + ' content stream(s) would not inflate';
+      if (r.stringCount === 0) notes.emptyResult = 'the extractor found no text strings (image-only or undecodable pages)';
       if (ctx.paint && ctx.paint.textDrawn === 0 && r.stringCount > 0) {
         notes.inkParadox = 'extractor read ' + r.stringCount + ' strings that painted ' + ctx.paint.textDrawn + ' glyphs';
-        notes.emptyResult = r.text.trim() === '';
       }
       if (r.orderMayDiffer) notes.orderDiffers = 'content-stream order differs from visual order';
       break;
     }
     case 'pdf-rasterize': {
+      requireMagic(doc, 'pdf', notes, 'pdf → png');
       const canvas = document.createElement('canvas');
       const stats = await renderPdf(doc.bytes, canvas, 1);
       ctx.paint = stats;
@@ -145,8 +162,7 @@ export async function executeStep(toolId, doc, params = {}, ctx = {}) {
       meta.textOffPage = stats.offPage;
       meta.rects = stats.rects;
       meta.inkPixels = stats.inkPixels;
-      notes.emptyResult = stats.inkPixels === 0;
-      if (stats.inkPixels === 0) notes.emptyResultText = 'ink census == 0: this page is blank, not merely empty';
+      if (stats.inkPixels === 0) notes.emptyResult = 'ink census == 0: this page is blank, not merely empty';
       break;
     }
     case 'text-pdf': {
@@ -178,15 +194,14 @@ export async function executeStep(toolId, doc, params = {}, ctx = {}) {
       break;
     }
     case 'docx-text': {
-      const magic = sniffMagic(doc.bytes);
-      if (magic.type !== 'zip') notes.magicMismatch = 'a .docx whose magic is "' + magic.magic + '" is not an OOXML package';
+      requireMagic(doc, 'zip', notes, 'docx → text');
       const r = await docxToText(doc.bytes);
       out.text = r.text;
       meta.entries = r.stats.entryCount;
       meta.paragraphs = r.stats.paragraphs;
       meta.runs = r.stats.runs;
       meta.tables = r.stats.tables;
-      notes.emptyResult = r.text.trim() === '';
+      if (r.text.trim() === '') notes.emptyResult = 'the package opened but carried no text runs';
       break;
     }
     case 'text-docx': {
@@ -197,11 +212,12 @@ export async function executeStep(toolId, doc, params = {}, ctx = {}) {
       break;
     }
     case 'xlsx-csv': {
+      requireMagic(doc, 'zip', notes, 'xlsx → csv');
       const r = await xlsxToCsv(doc.bytes);
       out.text = r.csv;
       out.type = 'csv';
       Object.assign(meta, r.stats);
-      notes.emptyResult = r.stats.rows === 0;
+      if (r.stats.rows === 0) notes.emptyResult = 'the worksheet had no rows';
       if (r.stats.errorsFound > 0) notes.cellErrors = r.stats.errorsFound + ' cell(s) carry a spreadsheet error value';
       break;
     }
@@ -217,12 +233,11 @@ export async function executeStep(toolId, doc, params = {}, ctx = {}) {
       out.text = r.md;
       meta.rows = r.rows;
       meta.cols = r.cols;
-      notes.emptyResult = r.rows === 0;
+      if (r.rows === 0) notes.emptyResult = 'no rows parsed from the csv';
       break;
     }
     case 'png-decode': {
-      const magic = sniffMagic(doc.bytes);
-      if (magic.type !== 'png') notes.magicMismatch = 'declared png, magic says "' + magic.magic + '"';
+      requireMagic(doc, 'png', notes, 'png → rgba');
       const canvas = await canvasFromBytes(doc.bytes);
       const img = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height);
       out.rgba = { data: new Uint8Array(img.data.buffer), width: canvas.width, height: canvas.height };
@@ -246,6 +261,7 @@ export async function executeStep(toolId, doc, params = {}, ctx = {}) {
       break;
     }
     case 'png-resize': {
+      requireMagic(doc, 'png', notes, 'png → png (resize)');
       const w = Number(params.w) || 640;
       const h = Number(params.h) || 480;
       const canvas = await canvasFromBytes(doc.bytes, 1, w, h);
@@ -255,6 +271,7 @@ export async function executeStep(toolId, doc, params = {}, ctx = {}) {
       break;
     }
     case 'png-quality': {
+      requireMagic(doc, 'png', notes, 'png → png (quality)');
       const q = Number(params.quality);
       const canvas = await canvasFromBytes(doc.bytes);
       const withQ = await encodeCanvas(canvas, Number.isFinite(q) ? Math.min(1, Math.max(0, q / 100)) : 0.5);
@@ -277,6 +294,7 @@ export async function executeStep(toolId, doc, params = {}, ctx = {}) {
       break;
     }
     case 'zip-unpack': {
+      requireMagic(doc, 'zip', notes, 'zip → files');
       const entries = await readZip(doc.bytes);
       out.files = entries.map((e) => ({ name: e.name, bytes: e.data.length, data: e.data }));
       meta.entries = entries.length;
@@ -330,6 +348,7 @@ export async function executeStep(toolId, doc, params = {}, ctx = {}) {
     }
     case 'rename-avif': {
       out.bytes = doc.bytes;
+      out.declaredType = 'avif';
       meta.declaredFormat = 'AVIF';
       meta.actualMagic = sniffMagic(doc.bytes || new Uint8Array(0)).magic;
       meta.engine = 'simulated format laundering';
@@ -343,7 +362,7 @@ export async function executeStep(toolId, doc, params = {}, ctx = {}) {
       meta.inputChars = src.length;
       meta.outputChars = out.text.length;
       meta.engine = 'simulated extractive summariser (term-frequency sentence scoring)';
-      notes.emptyResult = src.trim() === '';
+      if (src.trim() === '') notes.emptyResult = 'summarised an empty input into an empty output';
       break;
     }
     case 'png-tables': {
@@ -359,7 +378,10 @@ export async function executeStep(toolId, doc, params = {}, ctx = {}) {
     default:
       throw new Error('no executor for ' + toolId);
   }
+  finishStep(toolId, def, out, notes);
+}
 
+function finishStep(toolId, def, out, notes) {
   if (out.bytes) {
     out.bytesOut = out.bytes.length;
     const magic = sniffMagic(out.bytes);
@@ -381,7 +403,6 @@ export async function executeStep(toolId, doc, params = {}, ctx = {}) {
     out.bytesOut = 0;
   }
   out.type = out.type || def.out;
-  return out;
 }
 
 function toMarkdown(text) {
@@ -397,11 +418,13 @@ function toMarkdown(text) {
 
 /* ---------------- pipeline run ---------------- */
 
+/** opts.onStep(event) streams progress; opts.signal (from execute's second argument) cancels between steps. */
 export async function runPipeline(pipeline, fixture, opts = {}) {
   const onStep = opts.onStep || (() => {});
+  const signal = opts.signal || null;
   const started = performance.now();
   const steps = pipeline.steps || [];
-  let doc = await docFromFixture(fixture, pipeline.inputType);
+  let doc = docFromFixture(fixture, pipeline.inputType);
   const ctx = { inputName: fixture ? fixture.name : 'untitled', paint: null };
   const results = [];
   const notes = {};
@@ -416,11 +439,16 @@ export async function runPipeline(pipeline, fixture, opts = {}) {
       aborted = true;
       break;
     }
+    if (signal && signal.aborted) {
+      results.push({ step: i + 1, toolId: spec.toolId, ok: false, error: 'cancelled before this step ran' });
+      aborted = true;
+      break;
+    }
     await onStep({ phase: 'start', step: i + 1, toolId: spec.toolId, label: def.label, mode: def.mode });
     try {
       const out = await executeStep(spec.toolId, doc, spec.params || {}, ctx);
       Object.entries(out.notes || {}).forEach(([k, v]) => { notes[k] = v; });
-      doc = { type: out.type, bytes: out.bytes, text: out.text, rgba: out.rgba, files: out.files };
+      doc = { type: out.type, bytes: out.bytes, text: out.text, rgba: out.rgba, files: out.files, declaredType: out.declaredType || out.type };
       const rec = {
         step: i + 1,
         toolId: spec.toolId,
@@ -441,16 +469,18 @@ export async function runPipeline(pipeline, fixture, opts = {}) {
       await onStep({ phase: 'end', ...rec, artifact: artifactFor(out, spec.toolId) });
     } catch (err) {
       aborted = true;
-      const rec = { step: i + 1, toolId: spec.toolId, label: def.label, mode: def.mode, ok: false, error: String(err && err.message ? err.message : err), ms: Math.round((performance.now() - t0) * 100) / 100 };
+      Object.entries(err && err.notes ? err.notes : {}).forEach(([k, v]) => { notes[k] = v; });
+      const rec = {
+        step: i + 1, toolId: spec.toolId, label: def.label, mode: def.mode, ok: false,
+        error: String(err && err.message ? err.message : err),
+        ms: Math.round((performance.now() - t0) * 100) / 100,
+        notes: err && err.notes ? err.notes : {},
+      };
       results.push(rec);
       await onStep({ phase: 'error', ...rec });
       break;
     }
   }
-
-  const artifact = summariseArtifact(doc, pipeline.outputType);
-  const scoreInput = steps.map((s, i) => ({ toolId: s.toolId, params: s.params || {}, in: BY_ID[s.toolId] ? BY_ID[s.toolId].in : null, out: results[i] ? results[i].outType : (BY_ID[s.toolId] ? BY_ID[s.toolId].out : null) }));
-  const local = scoreTraps(scoreInput, notes, { inputType: pipeline.inputType, outputType: pipeline.outputType });
 
   return {
     ok: !aborted && results.length === steps.length,
@@ -460,24 +490,22 @@ export async function runPipeline(pipeline, fixture, opts = {}) {
     notes,
     ms: Math.round(performance.now() - started),
     finalType: doc.type,
-    artifact,
-    runScore: local.score,
-    runHits: local.hits,
+    artifact: summariseArtifact(doc, pipeline.outputType),
+    artifactBytes: doc.bytes || null,
   };
 }
 
+/** Compact, agent-facing description of the document at the end of the chain (no payload). */
 function summariseArtifact(doc, wantType) {
-  const out = { type: doc.type, wantType: wantType || null, bytes: doc.bytes ? doc.bytes.length : null };
+  const out = { type: doc.type, declaredType: doc.declaredType || doc.type, wantType: wantType || null, bytes: doc.bytes ? doc.bytes.length : null };
   if (doc.text != null) {
     out.preview = doc.text.slice(0, 240);
     out.chars = doc.text.length;
-    out.shaLen = doc.text.length;
   }
   if (doc.bytes) {
     const magic = sniffMagic(doc.bytes);
     out.magic = magic.magic;
     out.magicType = magic.type;
-    out.b64 = b64FromBytes(doc.bytes);
     if (magic.type === 'png') out.dims = pngDims(doc.bytes);
     if (doc.bytes.length === 0) out.empty = true;
   }
@@ -487,14 +515,18 @@ function summariseArtifact(doc, wantType) {
   return out;
 }
 
-export async function docFromFixture(fixture, wantType) {
+const TEXT_TYPES = ['txt', 'md', 'csv', 'html', 'csv-of-tables'];
+
+function docFromFixture(fixture, wantType) {
   if (!fixture) throw new Error('no fixture supplied');
   if (fixture.kind === 'files') return { type: 'files', files: fixture.files, name: fixture.name };
-  const bytes = fixture.bytes || (fixture.b64 ? bytesFromB64(fixture.b64) : null);
+  const bytes = fixture.bytes || null;
   if (!bytes && fixture.text == null) throw new Error('fixture has no bytes or text');
   const sniffed = bytes ? sniffMagic(bytes) : null;
   const declared = fixture.type || wantType;
   const doc = { type: declared || (sniffed && sniffed.type) || 'txt', bytes: bytes || textEncode(fixture.text), name: fixture.name, sniffed };
+  // what the pipeline asserts it is feeding (name-only routing), which the oracle re-checks against the bytes
+  doc.declaredType = wantType || doc.type;
   // text-ish inputs carry a decoded string as well as bytes, so a step never guesses at encoding
   if (TEXT_TYPES.includes(doc.type)) {
     doc.text = fixture.text != null ? fixture.text : textDecode(bytes);
@@ -504,29 +536,12 @@ export async function docFromFixture(fixture, wantType) {
   return doc;
 }
 
-const TEXT_TYPES = ['txt', 'md', 'csv', 'html', 'csv-of-tables'];
-
 function artifactFor(out, toolId) {
   if (out.bytes && out.bytes.length && out.bytes.length < 400000) {
     if (out.magicType === 'png') return { kind: 'png', dataUrl: 'data:image/png;base64,' + b64FromBytes(out.bytes), bytes: out.bytes.length };
-    return { kind: 'bytes', name: toolId + '-out', bytes: out.bytes.length, b64: b64FromBytes(out.bytes) };
+    return { kind: 'bytes', name: toolId + '-out', bytes: out.bytes.length };
   }
   if (out.text != null) return { kind: 'text', text: out.text.slice(0, 4000), bytes: out.bytesOut };
   if (out.rgba) return { kind: 'rgba', dims: { width: out.rgba.width, height: out.rgba.height } };
   return null;
 }
-
-/* ---------------- scoring bridge ---------------- */
-
-export function scoreLocally(pipeline, notes = {}) {
-  const steps = (pipeline.steps || []).map((s, i) => ({
-    toolId: s.toolId,
-    params: s.params || {},
-    in: BY_ID[s.toolId] ? BY_ID[s.toolId].in : null,
-    out: BY_ID[s.toolId] ? BY_ID[s.toolId].out : null,
-  }));
-  return scoreTraps(steps, notes, { inputType: pipeline.inputType, outputType: pipeline.outputType });
-}
-
-export const CATALOG_ENGINE = TRAP_ENGINE;
-export const TRAP_COUNT = TRAPS.length;

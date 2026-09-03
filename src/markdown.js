@@ -25,10 +25,16 @@ export function mdToHtml(md) {
   let para = [];
   let list = null; // 'ul' | 'ol'
   let fence = null;
+  let table = null; // null | 'head' | 'body'
   const flushPara = () => {
     if (para.length) { out.push('<p>' + inline(para.join(' ')) + '</p>'); para = []; }
   };
   const closeList = () => { if (list) { out.push('</' + list + '>'); list = null; } };
+  const closeTable = () => {
+    if (!table) return;
+    out.push(table === 'head' ? '</thead></table>' : '</tbody></table>');
+    table = null;
+  };
 
   for (const raw of lines) {
     const line = raw.replace(/\s+$/, '');
@@ -40,6 +46,7 @@ export function mdToHtml(md) {
     }
     if (fence !== null) { fence.push(raw); continue; }
 
+    if (table && !/^\s*\|(.+)\|\s*$/.test(line)) closeTable();
     const h = /^(#{1,6})\s+(.*)$/.exec(line);
     if (h) {
       flushPara(); closeList();
@@ -64,10 +71,13 @@ export function mdToHtml(md) {
     if (/^\s*\|(.+)\|\s*$/.test(line)) {
       flushPara(); closeList();
       const cells = line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((c) => c.trim());
-      if (cells.every((c) => /^:?-{2,}:?$/.test(c))) continue; // separator row
-      const tag = out.length && /<table>$/.test(out[out.length - 1]) ? 'tr' : null;
-      if (!tag) out.push('<table>');
-      const cellTag = out.some((l) => l.includes('<table>')) && !out.some((l) => l.includes('<tbody>')) ? 'th' : 'td';
+      if (cells.every((c) => /^:?-{2,}:?$/.test(c))) {
+        // separator row: the header is complete, rows from here on are body cells
+        if (table === 'head') { out.push('</thead><tbody>'); table = 'body'; }
+        continue;
+      }
+      if (!table) { out.push('<table><thead>'); table = 'head'; }
+      const cellTag = table === 'head' ? 'th' : 'td';
       out.push('<tr>' + cells.map((c) => '<' + cellTag + '>' + inline(c) + '</' + cellTag + '>').join('') + '</tr>');
       continue;
     }
@@ -77,8 +87,8 @@ export function mdToHtml(md) {
   if (fence !== null) out.push('<pre><code>' + esc(fence.join('\n')) + '</code></pre>');
   flushPara();
   closeList();
-  const body = out.join('\n');
-  return body.replace(/<table>/g, '<table>').replace(/<\/table>/g, '</table>');
+  closeTable();
+  return out.join('\n');
 }
 
 function inlineToMd(src) {

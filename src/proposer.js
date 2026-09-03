@@ -48,14 +48,6 @@ const SCRIPT = [
   },
 ];
 
-export const PROPOSE_GOALS = [
-  'turn a pdf into a summary',
-  'get the tables out of a spreadsheet as csv',
-  'summarize the scanned pdf',
-  'convert docx into markdown notes',
-  'unpack this archive',
-];
-
 export function propose(goal, inputType, outputType) {
   const g = String(goal || '');
   let hit = SCRIPT.find((s) => s.match.test(g));

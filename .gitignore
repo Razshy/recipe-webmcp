@@ -1,2 +1,4 @@
 .DS_Store
 GATE.json
+__pycache__/
+dist/

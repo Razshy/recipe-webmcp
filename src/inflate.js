@@ -1,7 +1,5 @@
-/* src/inflate.js — raw-deflate / zlib inflate via DecompressionStream, with a
- * tiny built-in fallback so the zip reader still works where the API is missing. */
-
-import { concatBytes } from './bytes.js';
+/* src/inflate.js — raw-deflate (zip entries) and zlib (PDF FlateDecode) inflate via
+ * DecompressionStream, with a tiny built-in fallback for browsers without the API. */
 
 export async function inflateRawBytes(bytes) {
   if (typeof DecompressionStream === 'function') {
@@ -96,7 +94,7 @@ function fallbackInflateRaw(src) {
       while (lens.length < hlit + hdist) {
         const sym = decodeSym(hTree);
         if (sym < 16) lens.push(sym);
-        else if (sym === 16) { const r = 3 + bitsRead(2); while (r-- > 0) lens.push(lens[lens.length - 1]); }
+        else if (sym === 16) { let r = 3 + bitsRead(2); while (r-- > 0) lens.push(lens[lens.length - 1]); }
         else if (sym === 17) { let r = 3 + bitsRead(3); while (r-- > 0) lens.push(0); }
         else { let r = 11 + bitsRead(7); while (r-- > 0) lens.push(0); }
       }
@@ -117,9 +115,4 @@ function fallbackInflateRaw(src) {
     }
   } while (!bfinal);
   return Uint8Array.from(out);
-}
-
-export function deflateStore(bytes) {
-  // "compression" that is honest about being a store: used by writeZip.
-  return { bytes: concatBytes([bytes]), stored: true };
 }

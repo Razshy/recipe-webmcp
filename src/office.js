@@ -13,7 +13,7 @@ import { decodeEntities } from './entities.js';
 
 export async function docxToText(bytes) {
   const entries = await readZip(bytes);
-  const doc = await zipEntry(entries, 'word/document.xml');
+  const doc = zipEntry(entries, 'word/document.xml');
   if (!doc) {
     const names = entries.map((e) => e.name);
     throw new Error('word/document.xml missing from the zip (saw: ' + names.slice(0, 6).join(', ') + ')');
@@ -21,7 +21,7 @@ export async function docxToText(bytes) {
   return docxXmlToText(textDecode(doc), entries.length);
 }
 
-export function docxXmlToText(xml, entryCount = 1) {
+function docxXmlToText(xml, entryCount = 1) {
   const paragraphs = [];
   let tables = 0;
   let runs = 0;
@@ -98,12 +98,12 @@ function colIndex(letters) {
 
 export async function xlsxToCsv(bytes) {
   const entries = await readZip(bytes);
-  const sharedXml = await zipEntry(entries, 'xl/sharedStrings.xml');
+  const sharedXml = zipEntry(entries, 'xl/sharedStrings.xml');
   const shared = sharedXml ? parseSharedStrings(textDecode(sharedXml)) : [];
   const sheetNames = entries.filter((e) => /^xl\/worksheets\/.*\.xml$/.test(e.name)).map((e) => e.name).sort();
   const sheetKey = sheetNames.includes('xl/worksheets/sheet1.xml') ? 'xl/worksheets/sheet1.xml' : sheetNames[0];
   if (!sheetKey) throw new Error('no worksheet part inside the xlsx zip');
-  const sheet = textDecode(await zipEntry(entries, sheetKey));
+  const sheet = textDecode(zipEntry(entries, sheetKey));
   const { rows, numericLike, errorsFound } = parseSheet(sheet, shared);
   const width = rows.reduce((a, r) => Math.max(a, r.length), 0);
   const grid = rows.map((r) => {
@@ -176,13 +176,13 @@ function parseSheet(xml, shared) {
   return { rows, numericLike, errorsFound };
 }
 
-export function csvCell(v) {
+function csvCell(v) {
   const s = v == null ? '' : String(v);
   return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
 /** Real CSV parsing (RFC4180 quoting, CRLF or LF). */
-export function parseCsv(text) {
+function parseCsv(text) {
   const rows = [];
   let row = [];
   let field = '';

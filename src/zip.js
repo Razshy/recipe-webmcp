@@ -15,17 +15,13 @@ const LF_SIG = 0x04034b50;
 function u16(dv, p) { return dv.getUint16(p, true); }
 function u32(dv, p) { return dv.getUint32(p, true); }
 
-export function findEocd(bytes) {
+function findEocd(bytes) {
   const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.length);
   const maxBack = Math.min(bytes.length, 22 + 65535);
   for (let i = bytes.length - 22; i >= bytes.length - maxBack && i >= 0; i--) {
     if (u32(dv, i) === EOCD_SIG) return { pos: i, count: u16(dv, i + 10), cdSize: u32(dv, i + 12), cdOff: u32(dv, i + 16) };
   }
   return null;
-}
-
-export function isZip(bytes) {
-  return !!bytes && bytes.length > 4 && u32(new DataView(bytes.buffer, bytes.byteOffset, bytes.length), 0) === LF_SIG;
 }
 
 /** -> [{name, method, crc, compSize, size, data:Uint8Array}] */
@@ -60,7 +56,7 @@ export async function readZip(bytes) {
   return entries;
 }
 
-export async function zipEntry(entries, name) {
+export function zipEntry(entries, name) {
   const hit = entries.find((e) => e.name === name);
   return hit ? hit.data : null;
 }

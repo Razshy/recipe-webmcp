@@ -5,10 +5,11 @@
  *  - extractPdfText(): content-stream interpreter for `BT/ET`, `Tf Td TD Tm T* TL TJ Tj '` `"`.
  *  - renderPdf(): the same interpreter, but painting text + rects to a canvas, so
  *    "ink" can be measured instead of assumed.
- * Streams are read raw, and FlateDecode streams are inflated via DecompressionStream. */
+ * FlateDecode streams (zlib-wrapped, as every real producer emits them) are inflated via
+ * DecompressionStream; a stream that will not inflate is reported, never silently skipped. */
 
 import { concatBytes, latin1Decode, latin1Encode } from './bytes.js';
-import { inflateRawBytes } from './inflate.js';
+import { inflateRawBytes, inflateZlib } from './inflate.js';
 
 /* ---------------- escaping ---------------- */
 
@@ -57,7 +58,7 @@ const LEADING = 15;
 const FONT_SIZE = 10.5;
 const MAX_CHARS_PER_LINE = 92;
 
-export function wrapText(text, width = MAX_CHARS_PER_LINE) {
+function wrapText(text, width = MAX_CHARS_PER_LINE) {
   const out = [];
   for (const raw of String(text).replace(/\r\n/g, '\n').split('\n')) {
     if (raw.length <= width) { out.push(raw); continue; }
@@ -230,21 +231,26 @@ async function* streams(pdf) {
     const dict = dictStart !== -1 ? text.slice(dictStart, s) : '';
     let body = pdf.subarray(start, e);
     if (body.length && body[body.length - 1] === 0x0a) body = body.subarray(0, body.length - 1);
+    let decodeFailed = false;
     if (/FlateDecode/.test(dict)) {
-      try { body = await inflateRawBytes(body); } catch (err) { /* leave raw */ }
+      try { body = await inflateZlib(body); } catch (zlibErr) {
+        try { body = await inflateRawBytes(body); } catch (rawErr) { decodeFailed = true; }
+      }
     }
-    yield { raw: latin1Decode(body), dict };
+    yield { raw: decodeFailed ? '' : latin1Decode(body), dict, decodeFailed };
     from = e + 9;
   }
 }
 
 /* ---------------- text extraction ---------------- */
 
-/** -> {pages:[{placed:[{text,x,y}], raw}], text, rawText, stringCount, pageCount} */
+/** -> {pages:[{placed:[{text,x,y}], raw}], text, rawText, stringCount, pageCount, streamsFailed} */
 export async function extractPdfText(pdfBytes) {
   const pages = [];
   let stringCount = 0;
+  let streamsFailed = 0;
   for await (const st of streams(pdfBytes)) {
+    if (st.decodeFailed) { streamsFailed++; continue; }
     if (!/\bBT\b|\bTj\b|\bTJ\b/.test(st.raw)) continue;
     const toks = await tokenize(st.raw);
     const placed = [];
@@ -278,7 +284,7 @@ export async function extractPdfText(pdfBytes) {
             break;
           }
           case 'T*': flush(leading || size * 1.2); break;
-          case 'j': case 'Tj': {
+          case 'Tj': {
             const s = strBefore(toks, k);
             if (s !== null) { stringCount++; pending.push(s); }
             break;
@@ -309,7 +315,7 @@ export async function extractPdfText(pdfBytes) {
   // rawText = content-stream order (what the bytes say); text = visual order (what a human reads)
   const rawText = pages.map((p) => p.raw).join('\n');
   const visual = [];
-  pages.forEach((p, pi) => {
+  pages.forEach((p) => {
     [...p.placed].sort((a, b) => (Math.round(b.y) - Math.round(a.y)) || (a.x - b.x))
       .forEach((it) => visual.push(it.text));
   });
@@ -317,6 +323,7 @@ export async function extractPdfText(pdfBytes) {
     pages,
     pageCount: pages.length,
     stringCount,
+    streamsFailed,
     rawText,
     text: visual.join('\n'),
     orderMayDiffer: normalise(rawText) !== normalise(visual.join('\n')),
@@ -359,7 +366,7 @@ export async function renderPdf(pdfBytes, canvas, scale = 1) {
     return px * scale >= -2 && px * scale <= w + 2 && cy >= -2 && cy <= h + 2;
   };
   for await (const st of streams(pdfBytes)) {
-    if (!/\bBT\b|\bre\b/.test(st.raw)) continue;
+    if (st.decodeFailed || !/\bBT\b|\bre\b/.test(st.raw)) continue;
     const toks = await tokenize(st.raw);
     let x = 0, y = 0, leading = LEADING, size = FONT_SIZE, fill = [0, 0, 0];
     let pending = [];
@@ -392,7 +399,7 @@ export async function renderPdf(pdfBytes, canvas, scale = 1) {
         case 'Tf': { for (let m = k - 1; m >= 0 && toks[m].type !== 'op'; m--) if (toks[m].type === 'num') size = toks[m].value; break; }
         case 'Tm': { const a = []; for (let m = k - 1; m >= 0 && toks[m].type !== 'op'; m--) a.unshift(toks[m].value); if (a.length >= 6) { x = a[4]; y = a[5]; } break; }
         case 'T*': flush(leading); break;
-        case 'j': case 'Tj': case "'": case '"': {
+        case 'Tj': case "'": case '"': {
           const s = strBefore(toks, k);
           if (s !== null) pending.push(s);
           if (t.value === "'" || t.value === '"') flush(leading);
@@ -433,5 +440,3 @@ export async function renderPdf(pdfBytes, canvas, scale = 1) {
   }
   return stats;
 }
-
-export const PDF_PAGE = { w: PAGE_W, h: PAGE_H };
