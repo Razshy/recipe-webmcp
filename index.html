@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<script src="/kit/mc.js"></script>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Recipe — pipelines that know where they'll break.</title>
+<link rel="stylesheet" href="./src/styles.css">
+</head>
+<body>
+<header class="masthead">
+  <div class="mast-inner">
+    <div class="mast-left">
+      <p class="kicker">document-pipeline studio · mise en place</p>
+      <h1>Recipe — pipelines that know where they&rsquo;ll break.</h1>
+      <p class="audit-note">
+        We watched an AI agent&rsquo;s document toolbox for 48 hours. Pandoc emitted a package the image did not
+        have; conversions exited&nbsp;0 while writing nothing; one tool&rsquo;s <code>-quality</code> flag was ignored for
+        every value we passed it; the opener command silently launched a GUI that never closed. This app turns
+        those traps into a scoring oracle: build a pipeline, and the page tells you where it will break
+        <em>before</em> you run it.
+      </p>
+    </div>
+    <div class="mast-right" id="status-pills" data-test="status-pills">
+      <span class="pill" id="pill-engine">webmcp: checking</span>
+      <span class="pill" id="pill-origin">origins: checking</span>
+      <span class="pill" id="pill-tools">tools: –</span>
+      <span class="pill" id="pill-oracle">oracle: offline</span>
+      <span class="pill warn" id="pill-real">REAL: – · SIMULATED: –</span>
+    </div>
+  </div>
+</header>
+
+<main class="board">
+  <!-- ---------------- left rail: mise en place ---------------- -->
+  <aside class="rail" aria-label="Mise en place">
+    <section class="card">
+      <h2>Mise en place</h2>
+      <label class="field">
+        <span>Input</span>
+        <select id="input-type" data-test="input-type"></select>
+      </label>
+      <label class="field">
+        <span>Goal</span>
+        <select id="goal-type" data-test="goal-type"></select>
+      </label>
+      <label class="field">
+        <span>Fixture</span>
+        <select id="fixture-id" data-test="fixture-id"></select>
+      </label>
+      <div class="btn-row">
+        <button class="btn primary" id="btn-build" data-test="btn-build">Start a recipe</button>
+        <button class="btn" id="btn-plan" data-test="btn-plan">Plan the chain</button>
+      </div>
+      <p class="hint" id="plan-hint">Planning inserts the shortest chain the catalogue can actually execute.</p>
+    </section>
+
+    <section class="card">
+      <h2>Ask the agent</h2>
+      <label class="field">
+        <span>Goal in words</span>
+        <input id="agent-goal" data-test="agent-goal" type="text" value="summarize the scanned pdf" spellcheck="false">
+      </label>
+      <div class="btn-row">
+        <button class="btn primary" id="btn-ask" data-test="btn-ask">Ask the agent</button>
+        <button class="btn danger" id="btn-bad" data-test="btn-bad">Propose the bad one</button>
+      </div>
+      <button class="btn wide" id="btn-good" data-test="btn-good">Load the known-good recipe (docx → md)</button>
+      <p class="hint">The proposer is a script, not a model: it scores its own idea, then the external scorer
+        disagrees. The gap between the two numbers is the product.</p>
+    </section>
+
+    <section class="card" id="palette-card">
+      <h2>Palette <span class="count" id="palette-count"></span></h2>
+      <input class="filter" id="palette-filter" type="search" placeholder="filter transforms…" data-test="palette-filter">
+      <div id="palette" class="palette" data-test="palette"></div>
+      <p class="hint">Click a transform to append it to the selected recipe. Every card carries its own
+        <span class="badge real">REAL</span> / <span class="badge sim">SIMULATED</span> honesty badge.</p>
+    </section>
+  </aside>
+
+  <!-- ---------------- center: canvas of pipeline index cards ---------------- -->
+  <section class="canvas-wrap">
+    <div class="canvas-head">
+      <h2>The canvas</h2>
+      <span class="muted" id="canvas-note">no recipes yet</span>
+    </div>
+    <div id="canvas" class="canvas" data-test="canvas"></div>
+  </section>
+
+  <!-- ---------------- right rail: agent + oracle ---------------- -->
+  <aside class="rail" aria-label="Agent">
+    <section class="card">
+      <h2>Simulate agent</h2>
+      <p class="hint">Everything below runs through <code>window.__agent</code> — the same handle the tests use,
+        not a private function.</p>
+      <div class="btn-row wrap" id="agent-quick" data-test="agent-quick"></div>
+      <div class="sub">
+        <h3>Visible tools <span class="count" id="tool-count"></span></h3>
+        <ul id="agent-tools" class="tool-list" data-test="agent-tools"></ul>
+      </div>
+      <div class="sub">
+        <h3>Call a tool</h3>
+        <label class="field">
+          <span>Tool</span>
+          <select id="call-tool" data-test="call-tool"></select>
+        </label>
+        <label class="field">
+          <span>Input (JSON)</span>
+          <textarea id="call-input" rows="3" spellcheck="false" data-test="call-input">{}</textarea>
+        </label>
+        <button class="btn primary wide" id="btn-call" data-test="btn-call">Call it</button>
+        <pre id="call-out" class="call-out" data-test="call-out">—</pre>
+      </div>
+    </section>
+
+    <section class="card oracle-card">
+      <h2>The oracle lives elsewhere</h2>
+      <p class="hint">The trap engine is registered on a <strong>different origin</strong>. The studio can only reach
+        it with <code>getTools({fromOrigins})</code>; its internal cache call is never exposed here.</p>
+      <button class="btn wide" id="btn-oracle-inspect" data-test="btn-oracle-inspect">Ask the oracle for its catalogue</button>
+      <pre id="oracle-out" class="call-out" data-test="oracle-out">—</pre>
+      <iframe id="scorer-frame" name="scorer" title="Recipe scorer origin" data-test="scorer-frame"></iframe>
+    </section>
+  </aside>
+</main>
+
+<!-- ---------------- run console ---------------- -->
+<section class="console-wrap" aria-label="Run console">
+  <div class="canvas-head">
+    <h2>Run console</h2>
+    <span class="muted" id="run-note">idle</span>
+    <button class="btn tiny" id="btn-clear-history" data-test="btn-clear-history">clear history</button>
+  </div>
+  <div id="console" class="console" data-test="console"><div class="lines" id="console-lines"></div></div>
+</section>
+
+<footer class="colophon">
+  <span>Vanilla ES modules, zero npm dependencies. REAL steps execute in this tab; SIMULATED steps say so.
+    Scoring engine: <span id="engine-stamp">—</span></span>
+</footer>
+
+<script type="module" src="./src/main.js"></script>
+</body>
+</html>
