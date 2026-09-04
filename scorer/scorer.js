@@ -172,13 +172,13 @@ async function registerTools() {
       properties: {
         steps: {
           type: 'array',
-          description: 'Ordered transforms, e.g. ["docx-text", {"toolId":"png-quality","params":{"quality":80}}].',
-          items: { type: 'object', properties: { toolId: { type: 'string', description: 'Transform id, e.g. "pdf-text".' }, params: { type: 'object', description: 'Step parameters, e.g. {"quality": 80}.' } }, required: ['toolId'], additionalProperties: true },
+          description: 'Ordered transforms; each item is a toolId string OR {toolId, params}, e.g. ["docx-text", {"toolId":"png-quality","params":{"quality":80}}].',
+          items: { anyOf: [{ type: 'string', description: 'Transform id on its own, e.g. "docx-text" (same as {"toolId":"docx-text"}).' }, { type: 'object', properties: { toolId: { type: 'string', description: 'Transform id, e.g. "pdf-text".' }, params: { type: 'object', description: 'Step parameters, e.g. {"quality": 80}.' } }, required: ['toolId'], additionalProperties: true }] },
         },
         inputType: { type: 'string', description: 'Type entering the chain, e.g. "pdf". Defaults to the first step\'s input.' },
         outputType: { type: 'string', description: 'Goal type, e.g. "txt". Defaults to the last step\'s output.' },
         notes: { type: 'object', description: 'Evidence you assert, e.g. {"emptyOutput": true}. Hits that rest only on this are labelled basis "claimed".' },
-        artifact: { type: 'object', description: 'Final artifact for re-measurement: {"b64": "<base64>", "declaredType": "png"}. Hits from this are basis "measured".', properties: { b64: { type: 'string', description: 'Base64 of the artifact bytes.' }, declaredType: { type: 'string', description: 'What the pipeline says it produced, e.g. "pdf".' } }, additionalProperties: false },
+        artifact: { type: 'object', description: 'Final artifact for re-measurement: {"b64","declaredType"}; hits from it are basis "measured". Only binary results (pdf/png/docx/zip) have bytes.', properties: { b64: { type: 'string', description: 'Base64 of the artifact bytes.' }, declaredType: { type: 'string', description: 'What the pipeline says it produced, e.g. "pdf".' } }, additionalProperties: false },
         mode: { type: 'string', enum: ['clamp', 'raw'], description: 'clamp (default) floors the score at 0; raw allows negative scores.' },
         verbosity: { type: 'string', enum: ['concise', 'full'], description: 'full adds the lesson text to every hit. Default concise.' },
       },

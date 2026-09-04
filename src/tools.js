@@ -55,6 +55,10 @@ function verdictView(res) {
     stars: res.stars,
     hits: res.hits.map((h) => ({ trapId: h.trapId, severity: h.severity, weight: h.weight, title: h.title, basis: h.basis })),
     evidence: res.evidence,
+    artifactSent: res.artifactSent === true,
+    measurementNote: res.artifactSent === true
+      ? 'artifact bytes were sent: hits labelled basis "measured" were re-sniffed by the oracle.'
+      : 'no artifact bytes were sent (the pipeline has not been run, or it ended in a text document, which carries no bytes), so every hit rests on the plan or on notes. basis "measured" is reachable only for binary artifacts: pdf, png, docx, zip.',
     oracle: res.oracle,
     via: res.via,
   };
@@ -360,7 +364,7 @@ export async function registerTools() {
     inputSchema: {
       type: 'object',
       properties: {
-        steps: { type: 'array', description: 'Ordered transforms, e.g. ["docx-text", {"toolId":"png-quality","params":{"quality":80}}].', items: { type: 'object', properties: { toolId: { type: 'string', description: 'Transform id, e.g. "pdf-text".' }, params: { type: 'object', description: 'Step parameters, e.g. {"quality": 80}.' } }, required: ['toolId'], additionalProperties: true } },
+        steps: { type: 'array', description: 'Ordered transforms; each item is a toolId string OR {toolId, params}, e.g. ["docx-text", {"toolId":"png-quality","params":{"quality":80}}].', items: { anyOf: [{ type: 'string', description: 'Transform id on its own, e.g. "docx-text" (same as {"toolId":"docx-text"}).' }, { type: 'object', properties: { toolId: { type: 'string', description: 'Transform id, e.g. "pdf-text".' }, params: { type: 'object', description: 'Step parameters, e.g. {"quality": 80}.' } }, required: ['toolId'], additionalProperties: true }] } },
         inputType: { type: 'string', description: 'Type entering the chain, e.g. "pdf". Defaults to the first step\'s input.' },
         outputType: { type: 'string', description: 'Goal type, e.g. "txt". Defaults to the last step\'s output.' },
         name: { type: 'string', description: 'Card title, up to 60 chars, e.g. "invoice to csv".' },
@@ -478,7 +482,7 @@ export async function registerTools() {
   await tool({
     name: 'pipeline_score',
     title: 'Score via the oracle',
-    description: 'Send a pipeline to the scorer surface (the trap engine lives only under scorer/; this page has no scoring code) and store its verdict on the card. Sends the step list, the notes the last run observed and the last artifact\'s bytes; the oracle labels every hit basis "plan", "measured" (it re-sniffed the bytes) or "claimed" (only notes say so). Returns {score, penalty, stars, hits, evidence, oracle, via}; wrong_state when the oracle is unreachable.',
+    description: 'Send a pipeline to the scorer surface (the trap engine lives only under scorer/; this page has no scoring code) and store its verdict on the card. Sends the step list, the last run\'s notes and the last artifact\'s bytes; the oracle labels each hit basis "plan", "measured" (it re-sniffed bytes) or "claimed" (notes only). Only binary artifacts carry bytes, so "measured" is unreachable after a text run; see measurementNote. Returns {score, penalty, stars, hits, evidence, artifactSent}.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -508,7 +512,7 @@ export async function registerTools() {
         pipelineId: { type: 'string', description: 'Pipeline id, e.g. "p3". Defaults to the selected pipeline.' },
         fixture: { type: 'string', description: 'Fixture name from fixture_list, e.g. "docx-memo". Defaults to the seeded fixture for the input type.' },
         scoreAfter: { type: 'boolean', description: 'Re-score through the oracle with the run evidence. Default true.' },
-        format: { type: 'string', enum: ['concise', 'detailed'], description: 'detailed adds per-step meta and the artifact base64 (when under 32 KB). Default concise.' },
+        format: { type: 'string', enum: ['concise', 'detailed'], description: 'detailed adds per-step meta plus artifact.b64 for binary artifacts under 32 KB; text artifacts have no bytes (b64 null + b64Note). Default concise.' },
       },
       additionalProperties: false,
     },
@@ -542,7 +546,15 @@ export async function registerTools() {
         return row;
       });
       const artifact = Object.assign({}, run.artifact);
-      if (format.value === 'detailed' && run.artifactBytes && run.artifactBytes.length <= MAX_INLINE_B64) artifact.b64 = b64FromBytes(run.artifactBytes);
+      if (format.value === 'detailed') {
+        if (run.artifactBytes && run.artifactBytes.length <= MAX_INLINE_B64) artifact.b64 = b64FromBytes(run.artifactBytes);
+        else {
+          artifact.b64 = null;
+          artifact.b64Note = run.artifactBytes
+            ? 'artifact is larger than ' + MAX_INLINE_B64 + ' bytes; not inlined.'
+            : 'this artifact is a text document, not bytes: read artifact.preview/artifact.chars instead. Oracle re-measurement (basis "measured") applies only to binary artifacts (pdf, png, docx, zip).';
+        }
+      }
       return { ok: run.ok, pipelineId: p.id, fixture: fixture.name, aborted: run.aborted, steps, notes: run.notes, ms: run.ms, finalType: run.finalType, artifact, verdict };
     },
   });
@@ -627,7 +639,7 @@ export async function registerTools() {
     inputSchema: {
       type: 'object',
       properties: {
-        steps: { type: 'array', description: 'Ordered transforms, e.g. ["docx-text", {"toolId":"png-quality","params":{"quality":80}}].', items: { type: 'object', properties: { toolId: { type: 'string', description: 'Transform id, e.g. "pdf-text".' }, params: { type: 'object', description: 'Step parameters, e.g. {"quality": 80}.' } }, required: ['toolId'], additionalProperties: true } },
+        steps: { type: 'array', description: 'Ordered transforms; each item is a toolId string OR {toolId, params}, e.g. ["docx-text", {"toolId":"png-quality","params":{"quality":80}}].', items: { anyOf: [{ type: 'string', description: 'Transform id on its own, e.g. "docx-text" (same as {"toolId":"docx-text"}).' }, { type: 'object', properties: { toolId: { type: 'string', description: 'Transform id, e.g. "pdf-text".' }, params: { type: 'object', description: 'Step parameters, e.g. {"quality": 80}.' } }, required: ['toolId'], additionalProperties: true }] } },
         inputType: { type: 'string', description: 'Type entering the chain, e.g. "pdf".' },
         outputType: { type: 'string', description: 'Goal type, e.g. "txt".' },
         notes: { type: 'object', description: 'Evidence you assert, e.g. {"emptyOutput": true}; hits from it are basis "claimed".' },

@@ -61,7 +61,7 @@ function tool(def, options) {
   await tool({
     name: 'pipeline_score',
     title: 'Score via the oracle',
-    description: 'Send a pipeline to the scorer surface (the trap engine lives only under scorer/; this page has no scoring code) and store its verdict on the card. Sends the step list, the notes the last run observed and the last artifact\'s bytes; the oracle labels every hit basis "plan", "measured" (it re-sniffed the bytes) or "claimed" (only notes say so). Returns {score, penalty, stars, hits, evidence, oracle, via}; wrong_state when the oracle is unreachable.',
+    description: 'Send a pipeline to the scorer surface (the trap engine lives only under scorer/; this page has no scoring code) and store its verdict on the card. Sends the step list, the last run\'s notes and the last artifact\'s bytes; the oracle labels each hit basis "plan", "measured" (it re-sniffed bytes) or "claimed" (notes only). Only binary artifacts carry bytes, so "measured" is unreachable after a text run; see measurementNote. Returns {score, penalty, stars, hits, evidence, artifactSent}.',
     inputSchema: {
       type: 'object',
       properties: {

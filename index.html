@@ -66,7 +66,7 @@
       <h2>Palette <span class="count" id="palette-count"></span></h2>
       <label class="sr-only" for="palette-filter">Filter transforms</label>
       <input class="filter" id="palette-filter" type="search" placeholder="filter transforms…" data-test="palette-filter">
-      <div id="palette" class="palette" data-test="palette"></div>
+      <div id="palette" class="palette scrolls" data-test="palette"></div>
       <p class="hint">Click a transform to append it to the selected recipe. Every card carries its own
         <span class="badge real">REAL</span> / <span class="badge sim">SIMULATED</span> honesty badge.</p>
     </section>
@@ -88,7 +88,7 @@
       <p class="hint" id="surface-note">Tools exactly as an agent sees them, from <code>getTools({fromOrigins})</code>.</p>
       <div class="sub">
         <h3>Visible tools <span class="count" id="tool-count"></span></h3>
-        <ul id="agent-tools" class="tool-list" data-test="agent-tools"></ul>
+        <ul id="agent-tools" class="tool-list scrolls" data-test="agent-tools"></ul>
       </div>
       <div class="sub">
         <h3>Run a tool</h3>
@@ -97,7 +97,7 @@
         <label class="field" for="call-input"><span>Input (JSON)</span></label>
         <textarea id="call-input" rows="3" spellcheck="false" data-test="call-input">{}</textarea>
         <button class="btn primary wide" id="btn-call" data-test="btn-call" type="button">Call it through window.__agent</button>
-        <pre id="call-out" class="call-out" data-test="call-out" role="status" aria-live="polite">—</pre>
+        <pre id="call-out" class="call-out idle" data-test="call-out" role="status" aria-live="polite">no call yet — run a tool above, or click a row in the invocation log.</pre>
       </div>
       <div class="sub">
         <h3>Invocation log <span class="count" id="invocation-count"></span></h3>
@@ -124,7 +124,7 @@
         it with <code>getTools({fromOrigins})</code> and its internal <code>warm_cache</code> call stays invisible; in single-folder
         mode the oracle is a same-origin iframe and the spec makes everything in it visible (the origin pill says which).</p>
       <button class="btn wide" id="btn-oracle-inspect" data-test="btn-oracle-inspect" type="button">Ask the oracle for its catalogue (via bridge)</button>
-      <pre id="oracle-out" class="call-out" data-test="oracle-out" role="status" aria-live="polite">—</pre>
+      <pre id="oracle-out" class="call-out idle" data-test="oracle-out" role="status" aria-live="polite">no oracle reply yet — ask for its catalogue with the button above.</pre>
       <iframe id="scorer-frame" name="scorer" title="Recipe scorer origin" allow="tools" data-test="scorer-frame" width="300" height="360"></iframe>
     </section>
   </aside>

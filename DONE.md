@@ -73,6 +73,24 @@ returns 19: the 17 top-level plus the two the oracle exposes.
   as text, R27 one input shape per tool, coerced/validated params and enums.
 - Refuted: none. Deferred: none.
 
+## Review pass (blind agent eval + design review at 1440/1280/390)
+- Surface: `steps` items now `anyOf: [string, {toolId, params}]` in `pipeline_build`,
+  `oracle_score_pipeline` and the oracle's `score_pipeline`, so the schema admits the bare-string form
+  the description advertises and the handlers already coerced (a validating host no longer rejects the
+  documented example client-side).
+- Surface: the "measured" basis is only reachable for byte-backed artifacts. `pipeline_run` with
+  `format:"detailed"` now returns `artifact.b64: null` plus an `artifact.b64Note` on a text result
+  instead of silently omitting the field, `pipeline_score` returns `artifactSent` and a
+  `measurementNote` saying why nothing could be re-sniffed, and the `format` / `artifact` parameter
+  descriptions state the rule. Behaviour of the scoring itself is unchanged.
+- Design: masthead status pills wrap instead of overflowing (390px `scrollWidth === clientWidth === 390`,
+  was 412); the canvas is a real `auto-fill minmax(420px, 1fr)` grid so a card fills the column
+  (692px at 1440, 532px at 1280, 358px at 390) rather than sitting at a fixed 344px; the type scale is
+  floored at 10px (zero text nodes below 10px, was 106); `--amber` darkened to `#7c5200`
+  (~6.1:1 on cream, was 4.33:1); the two idle output slots are dashed light placeholders naming what
+  will appear there instead of black bars holding an em dash; and the palette / tool-list scrollers
+  show a `scroll for more ↓` cue only while there is more below.
+
 ## Known limits
 - The oracle can only measure byte length and magic bytes of the final artifact; everything else stays
   `claimed`. Under native Chrome ≤152 `execute()` gets no `signal`; the run loop honours one when present.

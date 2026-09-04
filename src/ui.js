@@ -47,7 +47,9 @@ export function clearConsole() {
 
 export function showCall(name, result) {
   const txt = typeof result === 'string' ? result : JSON.stringify(result, null, 2);
-  $('call-out').textContent = '→ ' + name + '\n' + txt;
+  const out = $('call-out');
+  out.classList.remove('idle');
+  out.textContent = '→ ' + name + '\n' + txt;
 }
 
 /* ------------------------------------------------------------- selects */

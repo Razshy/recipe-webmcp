@@ -91,6 +91,7 @@ function wireUi() {
 
   $('btn-oracle-inspect').addEventListener('click', handled(async () => {
     const r = await callAndShow('oracle_trap_list', { format: 'detailed' });
+    $('oracle-out').classList.remove('idle');
     $('oracle-out').textContent = JSON.stringify(r, null, 2);
     logLine('head', 'oracle catalogue: ' + (r.count || 0) + ' traps · ' + (r.oracle || r.from) + ' · bridged through ' + r.bridgedTo);
   }));
@@ -106,6 +107,7 @@ function wireUi() {
     const tr = ev.target.closest('tr[data-n]');
     if (!tr) return;
     const entry = store.log.find((l) => String(l.n) === tr.dataset.n);
+    if (entry) $('call-out').classList.remove('idle');
     if (entry) $('call-out').textContent = '#' + entry.n + ' ' + entry.name + ' (' + entry.ms + 'ms)\ninput: ' + entry.input + '\noutput: ' + entry.output;
   });
 
@@ -149,6 +151,22 @@ async function seed() {
   return good;
 }
 
+/* The palette and the tool list scroll inside fixed-height panels. Without a cue the last line
+ * reads as clipped text rather than as more content, so mark the ones that actually overflow. */
+function wireScrollCues() {
+  const panes = ['palette', 'agent-tools'].map($).filter(Boolean);
+  const sync = () => panes.forEach((el) => {
+    const over = el.scrollHeight - el.clientHeight > 4;
+    el.classList.toggle('more', over && el.scrollTop + el.clientHeight < el.scrollHeight - 4);
+  });
+  panes.forEach((el) => {
+    el.addEventListener('scroll', sync, { passive: true });
+    new MutationObserver(sync).observe(el, { childList: true, subtree: true });
+  });
+  window.addEventListener('resize', sync, { passive: true });
+  sync();
+}
+
 async function boot() {
   try {
     wireUi();
@@ -161,6 +179,7 @@ async function boot() {
     await seed();
     await renderToolList();
     renderAll();
+    wireScrollCues();
     const real = CATALOG.filter((t) => t.mode === 'real').length;
     logLine('head', 'studio ready · ' + CATALOG.length + ' transforms (' + real + ' REAL, ' + (CATALOG.length - real) + ' SIMULATED) · ' +
       store.oracle.traps.length + ' traps on the oracle origin ' + (IS_MULTI ? '(' + SCORER_ORIGIN + ')' : '(same-origin iframe, single-folder mode)'));
