@@ -478,7 +478,7 @@ export async function registerTools() {
   await tool({
     name: 'pipeline_score',
     title: 'Score via the oracle',
-    description: 'Send a pipeline to the scorer origin (a different site; this page has no trap engine) and store its verdict on the card. Sends the step list, the notes the last run observed and the last artifact\'s bytes; the oracle labels every hit basis "plan", "measured" (it re-sniffed the bytes) or "claimed" (only notes say so). Returns {score, penalty, stars, hits, evidence, oracle, via}; wrong_state when the oracle is unreachable.',
+    description: 'Send a pipeline to the scorer surface (the trap engine lives only under scorer/; this page has no scoring code) and store its verdict on the card. Sends the step list, the notes the last run observed and the last artifact\'s bytes; the oracle labels every hit basis "plan", "measured" (it re-sniffed the bytes) or "claimed" (only notes say so). Returns {score, penalty, stars, hits, evidence, oracle, via}; wrong_state when the oracle is unreachable.',
     inputSchema: {
       type: 'object',
       properties: {

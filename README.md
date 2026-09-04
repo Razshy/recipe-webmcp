@@ -1,10 +1,12 @@
 # Recipe — pipelines that know where they'll break
 
-A document-pipeline studio in which an agent proposes conversion pipelines, real transforms run in the tab on real bytes, and an **oracle on a second origin** scores every chain against 15 documented traps — labelling each verdict *plan*, *measured* or *claimed*, because the studio is not allowed to grade its own homework.
+**Live:** <https://razshy.github.io/recipe-webmcp/> — the hosted build is one GitHub Pages folder, i.e. single-folder mode.
+
+A document-pipeline studio in which an agent proposes conversion pipelines, real transforms run in the tab on real bytes, and an **oracle the studio does not own** scores every chain against 15 documented traps — labelling each verdict *plan*, *measured* or *claimed*, because the studio is not allowed to grade its own homework. Served with `kit/serve.py` the oracle really is a second origin; the hosted build is a single GitHub Pages folder, so there it is a same-origin `<iframe>` (`window.MC.isMulti === false`) running the same code down the same `exposedTo` / `getTools({fromOrigins})` / `executeTool` path — the header pill on the live page says which mode you are looking at.
 
 ## Why WebMCP fits
 
-WebMCP hands an agent `execute()` results that say "ok" about things the page may not have done. Every tool here is built around that failure: a converter that exits 0 while writing nothing, a `quality` flag that is accepted and ignored, a "convert" that only renames a file, an extractor that reads strings no pixel ever showed. Recipe makes the fix structural rather than rhetorical. The studio origin has **no trap engine at all**; scoring lives on a sibling origin registered with `exposedTo`, discovered with `getTools({fromOrigins})` and executed with `executeTool`. When the studio runs a pipeline it sends the oracle the step list, what it *observed* and the *artifact bytes*; the oracle re-sniffs those bytes itself and marks every trap hit with its basis — `plan` (the step list alone), `measured` (the oracle verified it from bytes) or `claimed` (only the studio's notes say so). No single tool is authoritative, and the page says so on every card.
+WebMCP hands an agent `execute()` results that say "ok" about things the page may not have done. Every tool here is built around that failure: a converter that exits 0 while writing nothing, a `quality` flag that is accepted and ignored, a "convert" that only renames a file, an extractor that reads strings no pixel ever showed. Recipe makes the fix structural rather than rhetorical. The studio has **no trap engine at all** — the engine exists only under `scorer/`, registered there with `exposedTo`, discovered with `getTools({fromOrigins})` and executed with `executeTool`, with no local fallback if the oracle is unreachable. On the hosted single-folder build that scorer document is a same-origin frame, so the `exposedTo` list names the studio's own origin and gates nothing; run `python3 kit/serve.py --app apps/recipe` and the two are separate origins and the boundary is enforced for real. Either way the studio never computes a score. When the studio runs a pipeline it sends the oracle the step list, what it *observed* and the *artifact bytes*; the oracle re-sniffs those bytes itself and marks every trap hit with its basis — `plan` (the step list alone), `measured` (the oracle verified it from bytes) or `claimed` (only the studio's notes say so). No single tool is authoritative, and the page says so on every card.
 
 ## What people and agents can do together
 
@@ -18,11 +20,11 @@ The person keeps the consequential action: `pipeline_delete` exists only while a
 
 ## Better UX
 
-While the agent works, the human sees index cards appear on the canvas with a star meter (red when the oracle found traps), the offending step annotated inline with the trap's lesson, a `run: ok` / `run: FAILED` line per step with byte counts and magic bytes, and an evidence line saying what the oracle re-sniffed versus what the studio merely claimed. The run console streams every step; the agent-surface panel lists the tools exactly as an agent sees them (descriptions, parameters, read-only and origin chips), logs every invocation with input, output and timing, and lets the person run any tool by hand through `window.__agent`. Badges mark REAL vs SIMULATED transforms, native vs shim WebMCP, and multi-origin vs single-folder mode.
+While the agent works, the human sees index cards appear on the canvas with a star meter (red when the oracle found traps), the offending step annotated inline with the trap's lesson, a `run: ok` / `run: FAILED` line per step with byte counts and magic bytes, and an evidence line saying what the oracle re-sniffed versus what the studio merely claimed. The run console streams every step; the agent-surface panel lists the tools exactly as an agent sees them (descriptions, parameters, read-only and origin chips), logs every invocation with input, output and timing, and lets the person run any tool by hand through `window.__agent`. Badges mark REAL vs SIMULATED transforms, native vs shim WebMCP, and multi-origin vs single-folder mode — on the live URL that last pill reads `origins: single folder (oracle is a same-origin iframe)`.
 
 ## How we implemented WebMCP
 
-| tool | what | readOnly | origin | visible in ChatGPT's browser | API |
+| tool | what | readOnly | registered on | in ChatGPT's browser | API |
 |---|---|---|---|---|---|
 | `catalog_list` | transforms with real/simulated mode and trap ids | yes | main | yes | imperative |
 | `step_explain` | one transform's engine, params and the oracle's trap lessons | yes | main | yes | imperative |
@@ -42,9 +44,11 @@ While the agent works, the human sees index cards appear on the canvas with a st
 | `run_history` | recent runs | yes | main | yes | imperative |
 | `oracle_score_pipeline` | **bridge** to the scorer's `score_pipeline` | yes | main | yes | imperative |
 | `oracle_trap_list` | **bridge** to the scorer's `trap_list` | yes | main | yes | imperative |
-| `score_pipeline` | the trap engine: plan/measured/claimed verdict | yes | scorer (`exposedTo` main) | no (iframe) — use the bridge | imperative |
-| `trap_list` | the 15-trap catalogue with weights | yes | scorer (`exposedTo` main) | no (iframe) — use the bridge | imperative |
-| `warm_cache` | internal, not exposed cross-origin | yes | scorer | no | imperative |
+| `score_pipeline` | the trap engine: plan/measured/claimed verdict | yes | scorer document (`exposedTo` main) | no — registered inside the iframe; use the bridge | imperative |
+| `trap_list` | the 15-trap catalogue with weights | yes | scorer document (`exposedTo` main) | no — registered inside the iframe; use the bridge | imperative |
+| `warm_cache` | internal, registered without `exposedTo` | yes | scorer document | no — registered inside the iframe | imperative |
+
+**How many tools, and who sees them.** GitHub Pages serves the whole app as one folder, so on the live URL `window.MC.isMulti === false` and the scorer document is a *same-origin* frame — the spec makes such frames transparent, so `getTools()` there returns **20** names on load (the 17 top-level ones plus the frame's `score_pipeline`, `trap_list` and even the unexposed `warm_cache`) and **21** while a human has armed `pipeline_delete`; the header pill counts `toolchange ×20` / `×21`. ChatGPT's browser never enters an iframe, same-origin or not, so there it discovers only the **17** tools registered on the top-level document (18 armed) and reaches the oracle through the two `oracle_*` bridges. Under `kit/serve.py` the scorer is a real second origin: `getTools({fromOrigins:[scorer]})` returns 19 — the 17 top-level plus the two the oracle exposes — and `warm_cache` is invisible because nothing exposed it.
 
 `window.mc` is `document.modelContext` when the browser has WebMCP, else a spec-shaped shim (kit/mc.js). The registration code, from `src/tools.js`:
 
@@ -57,7 +61,7 @@ function tool(def, options) {
   await tool({
     name: 'pipeline_score',
     title: 'Score via the oracle',
-    description: 'Send a pipeline to the scorer origin (a different site; this page has no trap engine) and store its verdict on the card. Sends the step list, the notes the last run observed and the last artifact\'s bytes; the oracle labels every hit basis "plan", "measured" (it re-sniffed the bytes) or "claimed" (only notes say so). Returns {score, penalty, stars, hits, evidence, oracle, via}; wrong_state when the oracle is unreachable.',
+    description: 'Send a pipeline to the scorer surface (the trap engine lives only under scorer/; this page has no scoring code) and store its verdict on the card. Sends the step list, the notes the last run observed and the last artifact\'s bytes; the oracle labels every hit basis "plan", "measured" (it re-sniffed the bytes) or "claimed" (only notes say so). Returns {score, penalty, stars, hits, evidence, oracle, via}; wrong_state when the oracle is unreachable.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -80,7 +84,7 @@ function tool(def, options) {
 
 `guarded()` wraps every `execute` so an expected failure is *returned* as `{ ok: false, error: { code, message, hint } }` (codes: `not_found | invalid_param | wrong_state | empty_result | rule_violation | needs_human`) and never thrown, and every invocation lands in the on-page log.
 
-The oracle registers with `exposedTo` (`scorer/scorer.js`):
+The oracle registers with `exposedTo` (`scorer/scorer.js`) — `MAIN_ORIGIN` is the studio's origin when the app is served on two origins, and the page's own origin in the hosted single-folder build:
 
 ```js
   await window.mc.registerTool({
@@ -109,13 +113,13 @@ The human-armed tool uses an `AbortSignal` (`src/tools.js`):
   }, { signal: controllers.del.signal });
 ```
 
-`disarmDelete()` calls `controllers.del.abort()`, the tool disappears, and `mc-toolchange` bumps the counter in the header. The scorer `<iframe>` carries `allow="tools"` so the sibling origin may register under the `tools` permissions policy.
+`disarmDelete()` calls `controllers.del.abort()`, the tool disappears, and `mc-toolchange` bumps the counter in the header. The scorer `<iframe>` carries `allow="tools"` so the framed document may register under the `tools` permissions policy — required when it is a sibling origin, harmless when it is same-origin.
 
 ## Try it
 
 - **Multi-origin (the demo):** from the yard root, `python3 kit/serve.py --app apps/recipe` prints one URL per origin; open the `main` one. The scorer really is a different origin (another port).
-- **Single folder:** `cd apps/recipe && python3 -m http.server 8080` and open `http://127.0.0.1:8080/`. The oracle becomes a same-origin iframe (`window.MC.isMulti === false`); the origin pill says so and `warm_cache` becomes visible, as the spec makes same-origin frames transparent. `python3 bundle.py recipe` (from the yard root) writes `dist/recipe/` for hosting the same way.
-- **Browsers:** ChatGPT's desktop browser (Site tools enabled) discovers the 17–18 top-level tools; Chrome 149+ with `chrome://flags/#enable-webmcp-testing` additionally sees the oracle's tools inside the iframe (DevTools → Application → WebMCP). Any other browser runs the kit shim; the header badge says which.
+- **Single folder (what the live URL runs):** `cd apps/recipe && python3 -m http.server 8080` and open `http://127.0.0.1:8080/`. The oracle becomes a same-origin iframe (`window.MC.isMulti === false`); the origin pill says so and `warm_cache` becomes visible, as the spec makes same-origin frames transparent. `python3 bundle.py recipe` (from the yard root) writes `dist/recipe/`, and that is exactly the shape hosted at <https://razshy.github.io/recipe-webmcp/>.
+- **Browsers:** ChatGPT's desktop browser (Site tools enabled) discovers the 17 top-level tools, 18 with delete armed; Chrome 149+ with `chrome://flags/#enable-webmcp-testing` also lists the tools inside the iframe, so on the live single-folder site it sees 20 (21 armed) (DevTools → Application → WebMCP). Any other browser runs the kit shim; the header badge says which.
 - **Prompts:** the three in *What people and agents can do together*. Without an agent, use the **Agent surface** panel: pick a tool, type JSON, press *Call it through window.__agent* — the same handle the tests use.
 
 ## Real vs simulated
@@ -125,7 +129,8 @@ The human-armed tool uses an `AbortSignal` (`src/tools.js`):
 
 ## Limitations
 
-- ChatGPT's browser does not discover tools registered inside iframes, so `score_pipeline`, `trap_list` and `warm_cache` are invisible there; `oracle_score_pipeline` and `oracle_trap_list` bridge the two exposed ones from the top-level page and name the origin in their reply. Chrome with the flag sees both layers.
+- ChatGPT's browser does not discover tools registered inside iframes, so `score_pipeline`, `trap_list` and `warm_cache` are invisible there — including on the hosted build, where they are same-origin and `getTools()` does list them for a flag-enabled Chrome. `oracle_score_pipeline` and `oracle_trap_list` bridge the two exposed ones from the top-level page and name the origin in their reply.
+- Deployment mode is the one thing the live URL cannot show off: GitHub Pages serves one folder, so the `exposedTo` gate there points at the page's own origin and proves nothing by itself. The cross-origin behaviour it is written for — a real second origin, `warm_cache` invisible, `getTools({fromOrigins})` crossing a boundary — is what `python3 kit/serve.py --app apps/recipe` and the harness run, and `test_04_static.py` covers the hosted shape.
 - No declarative (`<form toolname>`) tools are used; ChatGPT's browser would not run them anyway.
 - Native WebMCP keeps only `readOnlyHint` and `untrustedContentHint`; side effects are stated in each description instead.
 - The oracle can only *measure* what it is handed: byte length and magic bytes of the final artifact. Everything else it reports as `claimed`, which is the honest limit of a second opinion.

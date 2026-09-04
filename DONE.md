@@ -21,6 +21,10 @@ page errors in both modes; single-folder static mode tested with a plain `python
 - Cross-origin plumbing: `exposedTo` on the scorer, `getTools({fromOrigins})` + `executeTool` in the
   studio, `allow="tools"` on the iframe, an unexposed decoy (`warm_cache`), an `AbortSignal`-gated
   `pipeline_delete` that only exists while a person has armed it, `mc-toolchange` counted in the header.
+  Served with `kit/serve.py` (and in the harness) the scorer is a genuinely separate origin and that
+  gating is enforced; hosted on GitHub Pages the whole app is one folder, so `window.MC.isMulti === false`,
+  the scorer document is a same-origin frame, `exposedTo` names the studio's own origin and gates nothing,
+  and `warm_cache` is visible. Same code path in both; the origin pill states which one is live.
 
 ## What is simulated (badged SIMULATED in the palette, on every card, and in tool results)
 - `ocr` — deterministic pseudo-words hashed from the image bytes, confidence always low.
@@ -33,14 +37,21 @@ page errors in both modes; single-folder static mode tested with a plain `python
 - The proposer (`pipeline_propose`) is a scripted pattern, not a model; the UI says so.
 
 ## Tool surface (what the agent sees)
+Counts on the hosted single-folder build: **20 names register on load, 21 while delete is armed**
+(`getTools()` sees the same-origin scorer frame too). ChatGPT's browser does not enter iframes, so there
+it is the **17** top-level tools, 18 armed. Served on two origins, `getTools({fromOrigins:[scorer]})`
+returns 19: the 17 top-level plus the two the oracle exposes.
+
 - Studio origin (top-level, visible to ChatGPT's browser): `catalog_list`, `step_explain`, `fixture_list`,
   `fixture_upload`, `pipeline_list`, `pipeline_plan`, `pipeline_build`, `pipeline_add_step`,
   `pipeline_remove_step`, `pipeline_validate`, `pipeline_score`, `pipeline_run`, `pipeline_propose`,
   `pipeline_seed_bad`, `run_history`, the bridges `oracle_score_pipeline` / `oracle_trap_list`, and
   `pipeline_delete` while armed.
-- Scorer origin (iframe, invisible to ChatGPT's browser, visible to Chrome with the flag):
-  `score_pipeline` and `trap_list` (`exposedTo` main), `warm_cache` (unexposed; visible in single-folder
-  mode because the frame is then same-origin — the origin pill and the copy say so).
+- Scorer document (registered inside the iframe, so invisible to ChatGPT's browser in either mode;
+  visible to Chrome with the flag): `score_pipeline` and `trap_list` (`exposedTo` main), plus
+  `warm_cache` (unexposed — hidden when the scorer is a real second origin, visible on the hosted
+  single-folder build because the frame is then same-origin and the spec makes such frames
+  transparent; the origin pill and the on-page copy say so).
 - Every tool validates its input in code and returns `{ok:false, error:{code, message, hint}}` for
   expected failures; a wrong `pipelineId` or fixture name is an error, never a success on another target.
   Only `readOnlyHint` / `untrustedContentHint` are used.
@@ -66,6 +77,10 @@ page errors in both modes; single-folder static mode tested with a plain `python
 - The oracle can only measure byte length and magic bytes of the final artifact; everything else stays
   `claimed`. Under native Chrome ≤152 `execute()` gets no `signal`; the run loop honours one when present.
 - ChatGPT's browser sees only the top-level tools; the two bridges cover the exposed oracle tools there.
+- The live URL runs single-folder mode, so it demonstrates the API path but not the origin boundary:
+  there the oracle is a same-origin frame. `python3 kit/serve.py --app apps/recipe` and the harness run
+  it on two real origins, where `exposedTo` and `fromOrigins` actually gate; `test_04_static.py` covers
+  the hosted single-folder shape.
 
 ## Commands (verified)
 ```
